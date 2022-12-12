@@ -1,0 +1,9 @@
+[package]
+name = "vaulty"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+rpassword = "7.2"
+rand_core = "0.6.4"
+scrypt = "0.10.0"
