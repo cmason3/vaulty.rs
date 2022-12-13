@@ -16,19 +16,60 @@
  */
 
 use std::str;
+use std::io::Read;
 use rand_core::{RngCore, OsRng};
-use chacha20poly1305::{aead::{Aead,KeyInit}, ChaCha20Poly1305};
+use chacha20poly1305::{aead::{Aead, KeyInit}, ChaCha20Poly1305};
 use zeroize::Zeroize;
 
 fn main() {
   const VAULTY_VERSION: u8 = 0x01;
   const VAULTY_PREFIX: &str = "$VAULTY;";
 
-  let plaintext = b"Hello World";
+  let mut input = Vec::new();
+  let mut h = std::io::stdin().lock();
+  h.read_to_end(&mut input).unwrap();
 
-  // - ENCRYPT
+  if str::from_utf8(&input).unwrap().starts_with(VAULTY_PREFIX) { // DECRYPT
+    let x = base64::decode(&s[VAULTY_PREFIX.len()..]).unwrap();
 
-  let mut password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+    if x[0] == VAULTY_VERSION && x.len() > 29 {
+      let mut password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+
+      let mut salt = [0_u8; 16];
+      salt.copy_from_slice(&x[1..17]);
+
+      let mut key = [0_u8; 32];
+      let params = scrypt::Params::new(4, 8, 1).unwrap();
+      scrypt::scrypt(&password.as_bytes(), &salt, &params, &mut key).unwrap();
+
+      let mut nonce = [0_u8; 12];
+      nonce.copy_from_slice(&x[17..29]);
+
+      let cipher = ChaCha20Poly1305::new(key[..].as_ref().into());
+      match cipher.decrypt(nonce[..].as_ref().into(), &x[29..]) {
+        Ok(v) => {
+          print!("{}", str::from_utf8(&v).unwrap());
+        },
+        Err(_e) => {
+          eprintln!("error: unable to decrypt ciphertext");
+        }
+      };
+
+      password.zeroize();
+      key.zeroize();
+    }
+    else {
+      eprintln!("error: invalid vaulty ciphertext");
+    }
+  }
+  else { // ENCRYPT
+    let mut password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+
+
+  }
+
+
+
 
   let mut salt = [0_u8; 16];
   OsRng.fill_bytes(&mut salt);
@@ -41,7 +82,7 @@ fn main() {
   OsRng.fill_bytes(&mut nonce);
 
   let cipher = ChaCha20Poly1305::new(key[..].as_ref().into());
-  let ciphertext = cipher.encrypt(nonce[..].as_ref().into(), &plaintext[..]).unwrap();
+  let ciphertext = cipher.encrypt(nonce[..].as_ref().into(), &input[..]).unwrap();
 
   let x = [&VAULTY_VERSION.to_be_bytes(), &salt[..], &nonce[..], &ciphertext[..]].concat();
 
@@ -55,33 +96,10 @@ fn main() {
 
   // - DECRYPT
 
-  let mut password = rpassword::prompt_password("Vaulty Password: ").unwrap();
- 
   if s.starts_with(VAULTY_PREFIX) {
-    let x = base64::decode(&s[VAULTY_PREFIX.len()..]).unwrap();
-
-    if x[0] == VAULTY_VERSION && x.len() > 29 {
-      let mut salt = [0_u8; 16];
-      salt.copy_from_slice(&x[1..17]);
-
-      let mut key = [0_u8; 32];
-      let params = scrypt::Params::new(4, 8, 1).unwrap();
-      scrypt::scrypt(&password.as_bytes(), &salt, &params, &mut key).unwrap();
-
-      let mut nonce = [0_u8; 12];
-      nonce.copy_from_slice(&x[17..29]);
-
-      let cipher = ChaCha20Poly1305::new(key[..].as_ref().into());
-      let plaintext = match cipher.decrypt(nonce[..].as_ref().into(), &x[29..]) {
-        Ok(v) => v,
-        Err(e) => eprintln!("{}", e)
-      };
-
-      println!("{}", str::from_utf8(&plaintext).unwrap());
-
-      key.zeroize();
-    }
-    password.zeroize();
+  }
+  else {
+    eprintln!("error: invalid ciphertext - missing prefix");
   }
 }
 
