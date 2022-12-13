@@ -14,6 +14,8 @@
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 use rand_core::{RngCore, OsRng};
+use chacha20poly1305::{aead::{Aead,KeyInit}, ChaCha20Poly1305};
+use zeroize::Zeroize;
 
 fn main() {
   let mut salt = [0u8; 16];
@@ -21,12 +23,35 @@ fn main() {
 
   println!("Random Salt is {:x?}", salt);
 
-  let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+  let mut password = rpassword::prompt_password("Vaulty Password: ").unwrap();
 
   let mut key = [0u8; 32];
   let params = scrypt::Params::new(16, 8, 1).unwrap();
   scrypt::scrypt(&password.as_bytes(), &salt, &params, &mut key).unwrap();
 
   println!("Key is {:x?}", key);
+
+  let mut nonce = [0u8; 12];
+  OsRng.fill_bytes(&mut nonce);
+
+  println!("Nonce is {:x?}", nonce);
+
+  let cipher = ChaCha20Poly1305::new(key[..].as_ref().into());
+  let ciphertext = cipher.encrypt(nonce[..].as_ref().into(), b"Hello World".as_ref()).unwrap();
+
+  println!("Ciphertext is {:x?}", ciphertext);
+
+  let version = "\u{1}".as_bytes();
+
+  let x = [&version[..], &salt[..], &nonce[..], &ciphertext[..]].concat();
+
+  println!("All is {:x?}", x);
+
+  let s = base64::encode(x);
+
+  println!("$VAULTY;{}", s);
+
+  password.zeroize();
+  key.zeroize();
 }
 

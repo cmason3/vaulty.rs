@@ -3,7 +3,13 @@ name = "vaulty"
 version = "1.0.0"
 edition = "2021"
 
+[profile.release]
+strip = true
+
 [dependencies]
 rpassword = "7.2"
-rand_core = "0.6.4"
-scrypt = "0.10.0"
+rand_core = "0.6"
+base64 = "0.20"
+scrypt = "0.10"
+chacha20poly1305 = "0.10"
+zeroize = "1.5"
