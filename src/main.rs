@@ -81,7 +81,6 @@ fn main() {
       for r in s.as_bytes().chunks(80).map(str::from_utf8).collect::<Result<Vec<&str>, _>>().unwrap() {
         println!("{}", r);
       }
-  
     }
     else {
       eprintln!("Error: Password Verification Failed");
