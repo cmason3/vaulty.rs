@@ -19,13 +19,6 @@ use std::str;
 use std::io::{Read, Write};
 use rand_core::{RngCore, OsRng};
 use chacha20poly1305::{aead::{Aead, KeyInit}, ChaCha20Poly1305};
-use zeroize::Zeroize;
-
-// TODO
-//  - Verify Password on encryption
-//  - Common function to derive key from password
-//  - Split out Base64 output into columns
-//  - Trim input to detect VAULTY; with whitespace at start
 
 fn main() {
   const VAULTY_VERSION: u8 = 0x01;
@@ -35,18 +28,18 @@ fn main() {
   let mut h = std::io::stdin().lock();
   h.read_to_end(&mut input).unwrap();
 
-  if str::from_utf8(&input).unwrap().starts_with(VAULTY_PREFIX) { // DECRYPT
-    let x = base64::decode(&input[VAULTY_PREFIX.len()..]).unwrap();
+  if String::from_utf8_lossy(&input).trim().starts_with(VAULTY_PREFIX) {
+    let s: &String = &String::from_utf8(input).unwrap().split_whitespace().collect();
+    let x = base64::decode(&s[VAULTY_PREFIX.len()..]).unwrap();
 
     if x[0] == VAULTY_VERSION && x.len() > 29 {
-      let mut password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+      let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
 
+      let mut key = [0_u8; 32];
       let mut salt = [0_u8; 16];
       salt.copy_from_slice(&x[1..17]);
 
-      let mut key = [0_u8; 32];
-      let params = scrypt::Params::new(16, 8, 1).unwrap();
-      scrypt::scrypt(&password.as_bytes(), &salt, &params, &mut key).unwrap();
+      derive_key(&password, &mut salt, &mut key, false).unwrap();
 
       let mut nonce = [0_u8; 12];
       nonce.copy_from_slice(&x[17..29]);
@@ -54,46 +47,53 @@ fn main() {
       let cipher = ChaCha20Poly1305::new(key[..].as_ref().into());
       match cipher.decrypt(nonce[..].as_ref().into(), &x[29..]) {
         Ok(v) => {
-          print!("{}", str::from_utf8(&v).unwrap());
+          std::io::stdout().write(&v).unwrap();
           std::io::stdout().flush().unwrap();
         },
         Err(_e) => {
-          eprintln!("error: unable to decrypt ciphertext");
+          eprintln!("Error: Unable to Decrypt Ciphertext");
         }
       };
-
-      password.zeroize();
-      key.zeroize();
     }
     else {
-      eprintln!("error: invalid vaulty ciphertext");
+      eprintln!("Error: Invalid Vaulty Ciphertext");
     }
   }
-  else { // ENCRYPT
-    let mut password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+  else {
+    let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+    if password == rpassword::prompt_password("Password Verification: ").unwrap() {
+      let mut key = [0_u8; 32];
+      let mut salt = [0_u8; 16];
 
-    let mut salt = [0_u8; 16];
-    OsRng.fill_bytes(&mut salt);
+      derive_key(&password, &mut salt, &mut key, true).unwrap();
+
+      let mut nonce = [0_u8; 12];
+      OsRng.fill_bytes(&mut nonce);
   
-    let mut key = [0_u8; 32];
-    let params = scrypt::Params::new(16, 8, 1).unwrap();
-    scrypt::scrypt(&password.as_bytes(), &salt, &params, &mut key).unwrap();
+      let cipher = ChaCha20Poly1305::new(key[..].as_ref().into());
+      let ciphertext = cipher.encrypt(nonce[..].as_ref().into(), &input[..]).unwrap();
   
-    let mut nonce = [0_u8; 12];
-    OsRng.fill_bytes(&mut nonce);
+      let x = [&VAULTY_VERSION.to_be_bytes(), &salt[..], &nonce[..], &ciphertext[..]].concat();
   
-    let cipher = ChaCha20Poly1305::new(key[..].as_ref().into());
-    let ciphertext = cipher.encrypt(nonce[..].as_ref().into(), &input[..]).unwrap();
+      let mut s = VAULTY_PREFIX.to_owned();
+      s.push_str(&base64::encode(x));
+
+      for r in s.as_bytes().chunks(80).map(str::from_utf8).collect::<Result<Vec<&str>, _>>().unwrap() {
+        println!("{}", r);
+      }
   
-    let x = [&VAULTY_VERSION.to_be_bytes(), &salt[..], &nonce[..], &ciphertext[..]].concat();
-  
-    let mut s = VAULTY_PREFIX.to_owned();
-    s.push_str(&base64::encode(x));
-  
-    println!("{}", s);
-  
-    password.zeroize();
-    key.zeroize();
+    }
+    else {
+      eprintln!("Error: Password Verification Failed");
+    }
   }
+}
+
+fn derive_key(password: &str, salt: &mut [u8; 16], key: &mut [u8; 32], gsalt: bool) -> Result<(), scrypt::errors::InvalidOutputLen> {
+  if gsalt == true {
+    OsRng.fill_bytes(salt);
+  }
+  let params = scrypt::Params::new(16, 8, 1).unwrap();
+  scrypt::scrypt(&password.as_bytes(), salt, &params, key)
 }
 
