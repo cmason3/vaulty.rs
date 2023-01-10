@@ -18,6 +18,7 @@
 use std::{io::{Read, Write}, str, cmp, env};
 use chacha20poly1305::{aead::{Aead, KeyInit}, ChaCha20Poly1305};
 use rand_core::{RngCore, OsRng};
+use sha2::{Digest, Sha256};
 
 fn main() {
   const VAULTY_VERSION: u8 = 0x01;
@@ -32,6 +33,9 @@ fn main() {
     }
     else if args[1] == "decrypt"[..cmp::min(args[1].len(), 7)] {
       mo = 2;
+    }
+    else if args[1] == "sha256"[..cmp::min(args[1].len(), 6)] {
+      mo = 3;
     }
   }
 
@@ -67,7 +71,7 @@ fn main() {
         eprintln!("Error: Password Verification Failed");
       }
     }
-    else if mo == 2{
+    else if mo == 2 {
       let s: &String = &String::from_utf8(input).unwrap().split_whitespace().collect();
 
       if s.starts_with(VAULTY_PREFIX) {
@@ -109,10 +113,15 @@ fn main() {
         eprintln!("Error: Invalid Vaulty Ciphertext");
       }
     }
+    else if mo == 3 {
+      let mut sha256 = Sha256::new();
+      sha256.update(input);
+      println!("{:x}", sha256.finalize());
+    }
   }
   else {
     eprintln!("Vaulty v{}", env!("CARGO_PKG_VERSION"));
-    eprintln!("Usage: vaulty encrypt|decrypt");
+    eprintln!("Usage: vaulty encrypt|decrypt|sha256");
   }
 }
   

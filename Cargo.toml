@@ -11,5 +11,6 @@ lto = true
 rpassword = "7.2"
 rand_core = "0.6"
 base64 = "0.20"
+sha2 = "0.10"
 scrypt = "0.10"
 chacha20poly1305 = "0.10"
