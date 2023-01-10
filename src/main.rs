@@ -176,7 +176,8 @@ fn main() {
   }
   else {
     eprintln!("Vaulty v{}", env!("CARGO_PKG_VERSION"));
-    eprintln!("Usage: vaulty encrypt|decrypt");
+    eprintln!("Usage: vaulty encrypt");
+    eprintln!("              decrypt");
     eprintln!("              sha256 [-r] [file|dir] [..]");
   }
 }
