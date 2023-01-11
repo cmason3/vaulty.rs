@@ -66,10 +66,9 @@ fn main() {
 
       let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
       if password == rpassword::prompt_password("Password Verification: ").unwrap() {
-        let mut key = [0_u8; 32];
         let mut salt = [0_u8; 16];
   
-        derive_key(&password, &mut salt, &mut key, true).unwrap();
+        let key = derive_key(&password, &mut salt, true);
   
         let mut nonce = [0_u8; 12];
         OsRng.fill_bytes(&mut nonce);
@@ -103,11 +102,10 @@ fn main() {
             if v[0] == VAULTY_VERSION && v.len() > 29 {
               let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
       
-              let mut key = [0_u8; 32];
               let mut salt = [0_u8; 16];
               salt.copy_from_slice(&v[1..17]);
       
-              derive_key(&password, &mut salt, &mut key, false).unwrap();
+              let key = derive_key(&password, &mut salt, false);
       
               let mut nonce = [0_u8; 12];
               nonce.copy_from_slice(&v[17..29]);
@@ -197,11 +195,14 @@ fn sha256(mut fh: PolyIO, f: &str) {
   println!("{:x}  {}", sha256.finalize(), f);
 }
   
-fn derive_key(password: &str, salt: &mut [u8; 16], key: &mut [u8; 32], gsalt: bool) -> Result<(), scrypt::errors::InvalidOutputLen> {
+fn derive_key(password: &str, salt: &mut [u8; 16], gsalt: bool) -> [u8; 32] {
   if gsalt == true {
     OsRng.fill_bytes(salt);
   }
+
+  let mut key = [0_u8; 32];
   let params = scrypt::Params::new(16, 8, 1).unwrap();
-  scrypt::scrypt(&password.as_bytes(), salt, &params, key)
+  scrypt::scrypt(&password.as_bytes(), salt, &params, &mut key).unwrap();
+  key
 }
   
