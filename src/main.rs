@@ -50,11 +50,11 @@ fn main() {
       mo = 2;
     }
     else if args[1] == "sha256"[..cmp::min(args[1].len(), 6)] {
+      if args.contains(&"-r".to_string()) {
+        args.retain(|x| *x != "-r");
+        recurse = true;
+      }
       mo = 3;
-    }
-    if args.contains(&"-r".to_string()) {
-      args.retain(|x| *x != "-r");
-      recurse = true;
     }
   }
 
