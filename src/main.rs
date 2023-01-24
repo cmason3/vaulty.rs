@@ -15,6 +15,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+// FIXME: Only encrypt files and not symlinks!
+
 use std::{io::{self, Read, Write}, fs::{File, metadata}, str, cmp, env};
 use chacha20poly1305::{aead::{Aead, KeyInit}, ChaCha20Poly1305};
 use rand_core::{RngCore, OsRng};
@@ -60,21 +62,64 @@ fn main() {
 
   if mo > 0 {
     if mo <= 2 {
-      let mut input = Vec::new();
-      let mut h = std::io::stdin().lock();
-      h.read_to_end(&mut input).unwrap();
-
       if mo == 1 {
-        let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
-        if password == rpassword::prompt_password("Password Verification: ").unwrap() {
-          let ciphertext = encrypt(&input, &password, true, 80);
-          println!("{}", std::str::from_utf8(&ciphertext).unwrap());
+        if args.len() == 2 {
+          let input = read_stdin();
+          let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+          if password == rpassword::prompt_password("Password Verification: ").unwrap() {
+            let ciphertext = encrypt(&input, &password, true, 80);
+            println!("{}", std::str::from_utf8(&ciphertext).unwrap());
+          }
+          else {
+            eprintln!("Error: Password Verification Failed");
+          }
         }
         else {
-          eprintln!("Error: Password Verification Failed");
+          let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+          if password == rpassword::prompt_password("Password Verification: ").unwrap() {
+            let mut i = 2;
+            while i < args.len() {
+              let r = metadata(&args[i]);
+  
+              if r.is_ok() && r.unwrap().is_file() {
+                print!("Encrypting {}... ", args[i]);
+                match std::fs::read(&args[i]) {
+                  Ok(buffer) => {
+                    let ciphertext = encrypt(&buffer, &password, false, 0);
+                    match std::fs::write(&args[i], ciphertext) {
+                      Ok(()) => {
+                        match std::fs::rename(&args[i], format!("{}.vlt", args[i])) {
+                          Ok(()) => {
+                            println!("ok");
+                          },
+                          Err(e) => {
+                            println!("{}", e);
+                          }
+                        }
+                      },
+                      Err(e) => {
+                        println!("{}", e);
+                      }
+                    }
+                  },
+                  Err(e) => {
+                    println!("{}", e);
+                  }
+                }
+              }
+              else {
+                eprintln!("{}... not a file", args[i]);
+              }
+              i += 1;
+            }
+          }
+          else {
+            eprintln!("Error: Password Verification Failed");
+          }
         }
       }
       else if mo == 2 {
+        let input = read_stdin();
         let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
 
         match decrypt(&input, &password) {
@@ -128,10 +173,17 @@ fn main() {
   }
   else {
     eprintln!("Vaulty v{}", env!("CARGO_PKG_VERSION"));
-    eprintln!("Usage: vaulty encrypt");
+    eprintln!("Usage: vaulty encrypt [file] [..]");
     eprintln!("              decrypt");
     eprintln!("              sha256 [-r] [file|dir] [..]");
   }
+}
+
+fn read_stdin() -> Vec<u8> {
+  let mut input = Vec::new();
+  let mut h = std::io::stdin().lock();
+  h.read_to_end(&mut input).unwrap();
+  input
 }
 
 fn derive_key(password: &str, salt: &mut [u8; 16], gsalt: bool) -> [u8; 32] {
