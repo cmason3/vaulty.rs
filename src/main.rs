@@ -182,10 +182,10 @@ fn encrypt(input: &Vec<u8>, password: &str, armour: bool, cols: usize) -> Vec<u8
   let mut nonce = [0_u8; 12];
   OsRng.fill_bytes(&mut nonce);
     
-  let cipher = ChaCha20Poly1305::new(key[..].as_ref().into());
-  let ciphertext = cipher.encrypt(nonce[..].as_ref().into(), &input[..]).unwrap();
+  let cipher = ChaCha20Poly1305::new(&key.into());
+  let ciphertext = cipher.encrypt(&nonce.into(), input.as_ref()).unwrap();
     
-  let x = [&VAULTY_VERSION.to_be_bytes(), &salt[..], &nonce[..], &ciphertext[..]].concat();
+  let x = [&VAULTY_VERSION.to_be_bytes(), salt.as_ref(), &nonce, &ciphertext].concat();
 
   if armour == true {
     let mut s = VAULTY_PREFIX.to_owned();
@@ -205,7 +205,7 @@ fn sha256(mut fh: PolyIO, f: &str) {
   let mut buffer = [0; 4096];
   let mut sha256 = Sha256::new();
 
-  while let Ok(n) = fh.read(&mut buffer[..]) {
+  while let Ok(n) = fh.read(&mut buffer) {
     if n > 0 {
       sha256.update(&buffer[0..n]);
     }
