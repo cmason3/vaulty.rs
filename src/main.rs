@@ -77,6 +77,8 @@ fn main() {
         else {
           let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
           if password == rpassword::prompt_password("Password Verification: ").unwrap() {
+            println!();
+
             let mut i = 2;
             while i < args.len() {
               let r = metadata(&args[i]);
