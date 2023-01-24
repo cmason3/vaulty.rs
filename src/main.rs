@@ -21,7 +21,7 @@ use rand_core::{RngCore, OsRng};
 use sha2::{Digest, Sha256};
 
 const VAULTY_VERSION: u8 = 0x01;
-const VAULTY_PREFIX: &str = "$VAULTY;";
+const VAULTY_PREFIX: &[u8; 8] = b"$VAULTY;";
 
 enum PolyIO {
   Stdin(io::Stdin),
@@ -59,63 +59,33 @@ fn main() {
   }
 
   if mo > 0 {
-    if mo == 1 {
+    if mo <= 2 {
       let mut input = Vec::new();
       let mut h = std::io::stdin().lock();
       h.read_to_end(&mut input).unwrap();
 
-      let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
-      if password == rpassword::prompt_password("Password Verification: ").unwrap() {
-        let ciphertext = encrypt(&input, &password, true, 80);
-        println!("{}", std::str::from_utf8(&ciphertext).unwrap());
-      }
-      else {
-        eprintln!("Error: Password Verification Failed");
-      }
-    }
-    else if mo == 2 {
-      let mut input = Vec::new();
-      let mut h = std::io::stdin().lock();
-      h.read_to_end(&mut input).unwrap();
-
-      let s: &String = &String::from_utf8(input).unwrap().split_whitespace().collect();
-
-      if s.starts_with(VAULTY_PREFIX) {
-        match base64::decode(&s[VAULTY_PREFIX.len()..]) {
-          Ok(v) => {
-            if v[0] == VAULTY_VERSION && v.len() > 29 {
-              let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
-      
-              let mut salt = [0_u8; 16];
-              salt.copy_from_slice(&v[1..17]);
-      
-              let key = derive_key(&password, &mut salt, false);
-      
-              let mut nonce = [0_u8; 12];
-              nonce.copy_from_slice(&v[17..29]);
-      
-              let cipher = ChaCha20Poly1305::new(key[..].as_ref().into());
-              match cipher.decrypt(nonce[..].as_ref().into(), &v[29..]) {
-                Ok(v) => {
-                  std::io::stdout().write(&v).unwrap();
-                  std::io::stdout().flush().unwrap();
-                },
-                Err(_e) => {
-                  eprintln!("Error: Unable to Decrypt Ciphertext");
-                }
-              };
-            }
-            else {
-              eprintln!("Error: Invalid Vaulty Ciphertext");
-            }
-          },
-          Err(_e) => {
-            eprintln!("Error: Invalid Vaulty Ciphertext");
-          }
+      if mo == 1 {
+        let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+        if password == rpassword::prompt_password("Password Verification: ").unwrap() {
+          let ciphertext = encrypt(&input, &password, true, 80);
+          println!("{}", std::str::from_utf8(&ciphertext).unwrap());
+        }
+        else {
+          eprintln!("Error: Password Verification Failed");
         }
       }
-      else {
-        eprintln!("Error: Invalid Vaulty Ciphertext");
+      else if mo == 2 {
+        let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+
+        match decrypt(&input, &password) {
+          Ok(v) => {
+            std::io::stdout().write(&v).unwrap();
+            std::io::stdout().flush().unwrap();
+          },
+          Err(e) => {
+            eprintln!("{}", e)
+          }
+        }
       }
     }
     else if mo == 3 {
@@ -175,7 +145,7 @@ fn derive_key(password: &str, salt: &mut [u8; 16], gsalt: bool) -> [u8; 32] {
   key
 }
   
-fn encrypt(input: &Vec<u8>, password: &str, armour: bool, cols: usize) -> Vec<u8> {
+fn encrypt(plaintext: &Vec<u8>, password: &str, armour: bool, cols: usize) -> Vec<u8> {
   let mut salt = [0_u8; 16];
   let key = derive_key(&password, &mut salt, true);
   
@@ -183,12 +153,12 @@ fn encrypt(input: &Vec<u8>, password: &str, armour: bool, cols: usize) -> Vec<u8
   OsRng.fill_bytes(&mut nonce);
     
   let cipher = ChaCha20Poly1305::new(&key.into());
-  let ciphertext = cipher.encrypt(&nonce.into(), input.as_ref()).unwrap();
+  let ciphertext = cipher.encrypt(&nonce.into(), plaintext.as_ref()).unwrap();
     
   let x = [&VAULTY_VERSION.to_be_bytes(), salt.as_ref(), &nonce, &ciphertext].concat();
 
   if armour == true {
-    let mut s = VAULTY_PREFIX.to_owned();
+    let mut s = str::from_utf8(VAULTY_PREFIX).unwrap().to_owned();
     s.push_str(&base64::encode(x));
 
     if cols > 0 {
@@ -198,6 +168,40 @@ fn encrypt(input: &Vec<u8>, password: &str, armour: bool, cols: usize) -> Vec<u8
   }
   else {
     x
+  }
+}
+
+fn decrypt(input: &Vec<u8>, password: &str) -> Result<Vec<u8>, String> {
+  let ciphertext = if input.windows(VAULTY_PREFIX.len()).position(|x| x == VAULTY_PREFIX) != None {
+    let s: String = String::from_utf8(input.to_vec()).unwrap().split_whitespace().collect();
+    match base64::decode(&s[VAULTY_PREFIX.len()..]) {
+      Ok(v) => { v },
+      Err(_e) => { vec![] }
+    }
+  }
+  else {
+    input.to_vec()
+  };
+
+  if ciphertext.len() > 29 && ciphertext[0] == VAULTY_VERSION {
+    let mut salt = [0_u8; 16];
+    salt.copy_from_slice(&ciphertext[1..17]);
+
+    let key = derive_key(&password, &mut salt, false);
+      
+    let mut nonce = [0_u8; 12];
+    nonce.copy_from_slice(&ciphertext[17..29]);
+
+    let cipher = ChaCha20Poly1305::new(&key.into());
+    match cipher.decrypt(&nonce.into(), &ciphertext[29..]) {
+      Ok(v) => { Ok(v) },
+      Err(_e) => {
+        Err("Error: Unable to Decrypt Ciphertext".to_string())
+      }
+    }
+  }
+  else {
+    Err("Error: Invalid Vaulty Ciphertext".to_string())
   }
 }
 
