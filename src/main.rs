@@ -20,6 +20,9 @@ use chacha20poly1305::{aead::{Aead, KeyInit}, ChaCha20Poly1305};
 use rand_core::{RngCore, OsRng};
 use sha2::{Digest, Sha256};
 
+const VAULTY_VERSION: u8 = 0x01;
+const VAULTY_PREFIX: &str = "$VAULTY;";
+
 enum PolyIO {
   Stdin(io::Stdin),
   File(File)
@@ -35,9 +38,6 @@ impl io::Read for PolyIO {
 }
 
 fn main() {
-  const VAULTY_VERSION: u8 = 0x01;
-  const VAULTY_PREFIX: &str = "$VAULTY;";
-
   let mut mo = 0;
   let mut recurse = false;
   let mut args: Vec<String> = env::args().collect();
@@ -66,24 +66,8 @@ fn main() {
 
       let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
       if password == rpassword::prompt_password("Password Verification: ").unwrap() {
-        let mut salt = [0_u8; 16];
-  
-        let key = derive_key(&password, &mut salt, true);
-  
-        let mut nonce = [0_u8; 12];
-        OsRng.fill_bytes(&mut nonce);
-    
-        let cipher = ChaCha20Poly1305::new(key[..].as_ref().into());
-        let ciphertext = cipher.encrypt(nonce[..].as_ref().into(), &input[..]).unwrap();
-    
-        let x = [&VAULTY_VERSION.to_be_bytes(), &salt[..], &nonce[..], &ciphertext[..]].concat();
-    
-        let mut s = VAULTY_PREFIX.to_owned();
-        s.push_str(&base64::encode(x));
-  
-        for r in s.as_bytes().chunks(80).map(str::from_utf8).collect::<Result<Vec<&str>, _>>().unwrap() {
-          println!("{}", r);
-        }
+        let ciphertext = encrypt(&input, &password, true, 80);
+        println!("{}", std::str::from_utf8(&ciphertext).unwrap());
       }
       else {
         eprintln!("Error: Password Verification Failed");
@@ -180,6 +164,43 @@ fn main() {
   }
 }
 
+fn derive_key(password: &str, salt: &mut [u8; 16], gsalt: bool) -> [u8; 32] {
+  if gsalt == true {
+    OsRng.fill_bytes(salt);
+  }
+
+  let mut key = [0_u8; 32];
+  let params = scrypt::Params::new(16, 8, 1).unwrap();
+  scrypt::scrypt(&password.as_bytes(), salt, &params, &mut key).unwrap();
+  key
+}
+  
+fn encrypt(input: &Vec<u8>, password: &str, armour: bool, cols: usize) -> Vec<u8> {
+  let mut salt = [0_u8; 16];
+  let key = derive_key(&password, &mut salt, true);
+  
+  let mut nonce = [0_u8; 12];
+  OsRng.fill_bytes(&mut nonce);
+    
+  let cipher = ChaCha20Poly1305::new(key[..].as_ref().into());
+  let ciphertext = cipher.encrypt(nonce[..].as_ref().into(), &input[..]).unwrap();
+    
+  let x = [&VAULTY_VERSION.to_be_bytes(), &salt[..], &nonce[..], &ciphertext[..]].concat();
+
+  if armour == true {
+    let mut s = VAULTY_PREFIX.to_owned();
+    s.push_str(&base64::encode(x));
+
+    if cols > 0 {
+      s = s.as_bytes().chunks(cols).map(str::from_utf8).collect::<Result<Vec<&str>, _>>().unwrap().join("\n");
+    }
+    s.into()
+  }
+  else {
+    x
+  }
+}
+
 fn sha256(mut fh: PolyIO, f: &str) {
   let mut buffer = [0; 4096];
   let mut sha256 = Sha256::new();
@@ -194,15 +215,3 @@ fn sha256(mut fh: PolyIO, f: &str) {
   }
   println!("{:x}  {}", sha256.finalize(), f);
 }
-  
-fn derive_key(password: &str, salt: &mut [u8; 16], gsalt: bool) -> [u8; 32] {
-  if gsalt == true {
-    OsRng.fill_bytes(salt);
-  }
-
-  let mut key = [0_u8; 32];
-  let params = scrypt::Params::new(16, 8, 1).unwrap();
-  scrypt::scrypt(&password.as_bytes(), salt, &params, &mut key).unwrap();
-  key
-}
-  
