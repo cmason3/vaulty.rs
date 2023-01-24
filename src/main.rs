@@ -15,9 +15,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-// FIXME: Only encrypt files and not symlinks!
-
-use std::{io::{self, Read, Write}, fs::{File, metadata}, str, cmp, env};
+use std::{io::{self, Read, Write}, fs::{File, symlink_metadata}, str, cmp, env};
 use chacha20poly1305::{aead::{Aead, KeyInit}, ChaCha20Poly1305};
 use rand_core::{RngCore, OsRng};
 use sha2::{Digest, Sha256};
@@ -71,7 +69,7 @@ fn main() {
             println!("{}", std::str::from_utf8(&ciphertext).unwrap());
           }
           else {
-            eprintln!("Error: Password Verification Failed");
+            eprintln!("\x1b[1;31mError: Password Verification Failed\x1b[0m");
           }
         }
         else {
@@ -81,7 +79,7 @@ fn main() {
 
             let mut i = 2;
             while i < args.len() {
-              let r = metadata(&args[i]);
+              let r = symlink_metadata(&args[i]);
   
               if r.is_ok() && r.unwrap().is_file() {
                 print!("Encrypting {}... ", args[i]);
@@ -92,45 +90,93 @@ fn main() {
                       Ok(()) => {
                         match std::fs::rename(&args[i], format!("{}.vlt", args[i])) {
                           Ok(()) => {
-                            println!("ok");
+                            println!("\x1b[1;32mok\x1b[0m");
                           },
-                          Err(e) => {
-                            println!("{}", e);
+                          Err(..) => {
+                            println!("\x1b[1;31munable to rename\x1b[0m");
                           }
                         }
                       },
-                      Err(e) => {
-                        println!("{}", e);
+                      Err(..) => {
+                        println!("\x1b[1;31munable to write\x1b[0m");
                       }
                     }
                   },
-                  Err(e) => {
-                    println!("{}", e);
+                  Err(..) => {
+                    println!("\x1b[1;31munable to read\x1b[0m");
                   }
                 }
               }
               else {
-                eprintln!("{}... not a file", args[i]);
+                println!("Encrypting {}... \x1b[1;31minvalid file\x1b[0m", args[i]);
               }
               i += 1;
             }
           }
           else {
-            eprintln!("Error: Password Verification Failed");
+            eprintln!("\x1b[1;31mError: Password Verification Failed\x1b[0m");
           }
         }
       }
       else if mo == 2 {
-        let input = read_stdin();
-        let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+        if args.len() == 2 {
+          let input = read_stdin();
+          let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
 
-        match decrypt(&input, &password) {
-          Ok(v) => {
-            std::io::stdout().write(&v).unwrap();
-            std::io::stdout().flush().unwrap();
-          },
-          Err(e) => {
-            eprintln!("{}", e)
+          match decrypt(&input, &password) {
+            Ok(v) => {
+              std::io::stdout().write(&v).unwrap();
+              std::io::stdout().flush().unwrap();
+            },
+            Err(e) => {
+              eprintln!("\x1b[1;31m{}\x1b[0m", e)
+            }
+          }
+        }
+        else {
+          let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
+          println!();
+
+          let mut i = 2;
+          while i < args.len() {
+            let r = symlink_metadata(&args[i]);
+
+            if r.is_ok() && r.unwrap().is_file() {
+              print!("Decrypting {}... ", args[i]);
+              match std::fs::read(&args[i]) {
+                Ok(buffer) => {
+                  match decrypt(&buffer, &password) {
+                    Ok(v) => {
+                      match std::fs::write(&args[i], v) {
+                        Ok(()) => {
+                          match std::fs::rename(&args[i], args[i].strip_suffix(".vlt").unwrap_or(&args[i])) {
+                            Ok(()) => {
+                              println!("\x1b[1;32mok\x1b[0m");
+                            },
+                            Err(..) => {
+                              println!("\x1b[1;31munable to rename\x1b[0m");
+                            }
+                          }
+                        },
+                        Err(..) => {
+                          println!("\x1b[1;31munable to write\x1b[0m");
+                        }
+                      }
+                    },
+                    Err(..) => {
+                      println!("\x1b[1;31merror\x1b[0m");
+                    }
+                  }
+                },
+                Err(..) => {
+                  println!("\x1b[1;31munable to read\x1b[0m");
+                }
+              }
+            }
+            else {
+              println!("Decrypting {}... \x1b[1;31minvalid file\x1b[0m", args[i]);
+            }
+            i += 1;
           }
         }
       }
@@ -142,7 +188,7 @@ fn main() {
       else {
         let mut i = 2;
         while i < args.len() {
-          let r = metadata(&args[i]);
+          let r = symlink_metadata(&args[i]);
 
           if r.is_ok() && r.unwrap().is_dir() {
             if recurse == true {
@@ -176,7 +222,7 @@ fn main() {
   else {
     eprintln!("Vaulty v{}", env!("CARGO_PKG_VERSION"));
     eprintln!("Usage: vaulty encrypt [file] [..]");
-    eprintln!("              decrypt");
+    eprintln!("              decrypt [file] [..]");
     eprintln!("              sha256 [-r] [file|dir] [..]");
   }
 }
@@ -230,7 +276,7 @@ fn decrypt(input: &Vec<u8>, password: &str) -> Result<Vec<u8>, String> {
     let s: String = String::from_utf8(input.to_vec()).unwrap().split_whitespace().collect();
     match base64::decode(&s[VAULTY_PREFIX.len()..]) {
       Ok(v) => { v },
-      Err(_e) => { vec![] }
+      Err(..) => { vec![] }
     }
   }
   else {
@@ -249,7 +295,7 @@ fn decrypt(input: &Vec<u8>, password: &str) -> Result<Vec<u8>, String> {
     let cipher = ChaCha20Poly1305::new(&key.into());
     match cipher.decrypt(&nonce.into(), &ciphertext[29..]) {
       Ok(v) => { Ok(v) },
-      Err(_e) => {
+      Err(..) => {
         Err("Error: Unable to Decrypt Ciphertext".to_string())
       }
     }

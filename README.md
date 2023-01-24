@@ -5,7 +5,7 @@ Vaulty is an extremely lightweight encryption/decryption tool which uses ChaCha2
 
 ```
 vaulty encrypt [file] [..]
-       decrypt
+       decrypt [file] [..]
        sha256 [-r] [file|dir] [..]
 ```
 
@@ -19,4 +19,11 @@ $VAULTY;AY3eJ98NF6WFDMAP62lRdl58A2db5XJ2gNvKd0nmDs5ZrmNlJ8TSURpxc3bNF1iGw77dHA==
 
 echo "$VAULTY;..." | vaulty decrypt
 Hello World
+```
+
+#### Usage - SHA256
+
+```
+echo "Hello World" | vaulty sha256
+d2a84f4b8b650937ec8f73cd8be2c74add5a911ba64df27458ed8229da804a26  -
 ```
