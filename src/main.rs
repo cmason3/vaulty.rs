@@ -120,10 +120,10 @@ fn main() {
       }
       else if mo == 2 {
         if args.len() == 2 {
-          let input = read_stdin();
+          let mut input = read_stdin();
           let password = rpassword::prompt_password("Vaulty Password: ").unwrap();
 
-          match decrypt(&input, &password) {
+          match decrypt(&mut input, &password) {
             Ok(v) => {
               std::io::stdout().write(&v).unwrap();
               std::io::stdout().flush().unwrap();
@@ -144,8 +144,8 @@ fn main() {
             if r.is_ok() && r.unwrap().is_file() {
               print!("Decrypting {}... ", args[i]);
               match std::fs::read(&args[i]) {
-                Ok(buffer) => {
-                  match decrypt(&buffer, &password) {
+                Ok(mut buffer) => {
+                  match decrypt(&mut buffer, &password) {
                     Ok(v) => {
                       match std::fs::write(&args[i], v) {
                         Ok(()) => {
@@ -253,13 +253,17 @@ fn encrypt(plaintext: &Vec<u8>, password: &str, armour: bool, cols: usize) -> Ve
   OsRng.fill_bytes(&mut nonce);
     
   let cipher = ChaCha20Poly1305::new(&key.into());
-  let ciphertext = cipher.encrypt(&nonce.into(), plaintext.as_ref()).unwrap();
-    
-  let x = [&VAULTY_VERSION.to_be_bytes(), salt.as_ref(), &nonce, &ciphertext].concat();
+
+  let ciphertext = [
+    &VAULTY_VERSION.to_be_bytes(),
+    salt.as_ref(),
+    &nonce,
+    &cipher.encrypt(&nonce.into(), plaintext.as_ref()).unwrap()
+  ].concat();
 
   if armour == true {
     let mut s = str::from_utf8(VAULTY_PREFIX).unwrap().to_owned();
-    s.push_str(&base64::encode(x));
+    s.push_str(&base64::encode(ciphertext));
 
     if cols > 0 {
       s = s.as_bytes().chunks(cols).map(str::from_utf8).collect::<Result<Vec<&str>, _>>().unwrap().join("\n");
@@ -267,21 +271,16 @@ fn encrypt(plaintext: &Vec<u8>, password: &str, armour: bool, cols: usize) -> Ve
     s.into()
   }
   else {
-    x
+    ciphertext
   }
 }
 
-fn decrypt(input: &Vec<u8>, password: &str) -> Result<Vec<u8>, String> {
-  let ciphertext = if input.windows(VAULTY_PREFIX.len()).position(|x| x == VAULTY_PREFIX) != None {
-    let s: String = String::from_utf8(input.to_vec()).unwrap().split_whitespace().collect();
-    match base64::decode(&s[VAULTY_PREFIX.len()..]) {
-      Ok(v) => { v },
-      Err(..) => { vec![] }
-    }
+fn decrypt(ciphertext: &mut Vec<u8>, password: &str) -> Result<Vec<u8>, String> {
+  if ciphertext.windows(VAULTY_PREFIX.len()).position(|x| x == VAULTY_PREFIX) != None {
+    let s: String = String::from_utf8(ciphertext.to_vec()).unwrap().split_whitespace().collect();
+    ciphertext.clear();
+    ciphertext.extend(&base64::decode(&s[VAULTY_PREFIX.len()..]).unwrap());
   }
-  else {
-    input.to_vec()
-  };
 
   if ciphertext.len() > 29 && ciphertext[0] == VAULTY_VERSION {
     let mut salt = [0_u8; 16];
@@ -294,7 +293,9 @@ fn decrypt(input: &Vec<u8>, password: &str) -> Result<Vec<u8>, String> {
 
     let cipher = ChaCha20Poly1305::new(&key.into());
     match cipher.decrypt(&nonce.into(), &ciphertext[29..]) {
-      Ok(v) => { Ok(v) },
+      Ok(v) => {
+        Ok(v) 
+      },
       Err(..) => {
         Err("Error: Unable to Decrypt Ciphertext".to_string())
       }
@@ -319,3 +320,11 @@ fn sha256(mut fh: PolyIO, f: &str) {
   }
   println!("{:x}  {}", sha256.finalize(), f);
 }
+
+/*
+fn memory_usage(label: &str) {
+  let x = std::fs::read("/proc/self/stat").unwrap();
+  let vsz = str::from_utf8(&x).unwrap().split_whitespace().nth(22).unwrap();
+  eprintln!("{} {}", label, vsz);
+}
+*/
