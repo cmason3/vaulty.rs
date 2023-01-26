@@ -49,17 +49,20 @@ fn main() {
     else if args[1] == "decrypt"[..cmp::min(args[1].len(), 7)] {
       mo = 2;
     }
+    else if args[1] == "chpass"[..cmp::min(args[1].len(), 6)] {
+      mo = 3;
+    }
     else if args[1] == "sha256"[..cmp::min(args[1].len(), 6)] {
       if args.contains(&"-r".to_string()) {
         args.retain(|x| *x != "-r");
         recurse = true;
       }
-      mo = 3;
+      mo = 4;
     }
   }
 
   if mo > 0 {
-    if mo <= 2 {
+    if mo <= 3 {
       if mo == 1 {
         if args.len() == 2 {
           let input = read_stdin();
@@ -180,8 +183,32 @@ fn main() {
           }
         }
       }
+      else if mo == 3 {
+        if args.len() == 2 {
+          let mut input = read_stdin();
+          let opassword = rpassword::prompt_password("Old Vaulty Password: ").unwrap();
+          let password = rpassword::prompt_password("\nNew Vaulty Password: ").unwrap();
+          if password == rpassword::prompt_password("Password Verification: ").unwrap() {
+            match decrypt(&mut input, &opassword) {
+              Ok(v) => {
+                let ciphertext = encrypt(&v, &password, true, 80);
+                println!("{}", std::str::from_utf8(&ciphertext).unwrap());
+              },
+              Err(e) => {
+                eprintln!("\x1b[1;31m{}\x1b[0m", e)
+              }
+            }
+          }
+          else {
+            eprintln!("\x1b[1;31mError: Password Verification Failed\x1b[0m");
+          }
+        }
+        else {
+          eprintln!("\x1b[1;31mError: Not Implemented Yet\x1b[0m");
+        }
+      }
     }
-    else if mo == 3 {
+    else if mo == 4 {
       if args.len() == 2 {
         sha256(PolyIO::Stdin(std::io::stdin()), "-");
       }
@@ -223,6 +250,7 @@ fn main() {
     eprintln!("Vaulty v{}", env!("CARGO_PKG_VERSION"));
     eprintln!("Usage: vaulty encrypt [file] [..]");
     eprintln!("              decrypt [file] [..]");
+    eprintln!("              chpass");
     eprintln!("              sha256 [-r] [file|dir] [..]");
   }
 }
