@@ -15,7 +15,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-use std::{io::{self, Read, Write}, fs::{File, symlink_metadata}, str, cmp, env};
+use std::{io::{self, Read, Write}, fs::{File, symlink_metadata}, str, cmp, mem, env};
 use chacha20poly1305::{aead::{Aead, KeyInit}, ChaCha20Poly1305};
 use rand_core::{RngCore, OsRng};
 use sha2::{Digest, Sha256};
@@ -86,6 +86,7 @@ fn main() {
   
               if r.is_ok() && r.unwrap().is_file() {
                 print!("Encrypting {}... ", args[i]);
+                io::stdout().flush().unwrap();
                 match std::fs::read(&args[i]) {
                   Ok(buffer) => {
                     let ciphertext = encrypt(&buffer, &password, false, 0);
@@ -146,6 +147,7 @@ fn main() {
 
             if r.is_ok() && r.unwrap().is_file() {
               print!("Decrypting {}... ", args[i]);
+              io::stdout().flush().unwrap();
               match std::fs::read(&args[i]) {
                 Ok(mut buffer) => {
                   match decrypt(&mut buffer, &password) {
@@ -204,7 +206,52 @@ fn main() {
           }
         }
         else {
-          eprintln!("\x1b[1;31mError: Not Implemented Yet\x1b[0m");
+          let opassword = rpassword::prompt_password("Old Vaulty Password: ").unwrap();
+          let password = rpassword::prompt_password("\nNew Vaulty Password: ").unwrap();
+          if password == rpassword::prompt_password("Password Verification: ").unwrap() {
+            println!();
+
+            let mut i = 2;
+            while i < args.len() {
+              let r = symlink_metadata(&args[i]);
+  
+              if r.is_ok() && r.unwrap().is_file() {
+                print!("Updating {}... ", args[i]);
+                io::stdout().flush().unwrap();
+                match std::fs::read(&args[i]) {
+                  Ok(mut buffer) => {
+                    match decrypt(&mut buffer, &opassword) {
+                      Ok(v) => {
+                        mem::drop(buffer);
+                        let ciphertext = encrypt(&v, &password, false, 0);
+                        match std::fs::write(&args[i], ciphertext) {
+                          Ok(()) => {
+                            println!("\x1b[1;32mok\x1b[0m");
+                          },
+                          Err(..) => {
+                            println!("\x1b[1;31munable to write\x1b[0m");
+                          }
+                        }
+                      },
+                      Err(..) => {
+                        println!("\x1b[1;31merror\x1b[0m");
+                      }
+                    }
+                  },
+                  Err(..) => {
+                    println!("\x1b[1;31munable to read\x1b[0m");
+                  }
+                }
+              }
+              else {
+                println!("Updating {}... \x1b[1;31minvalid file\x1b[0m", args[i]);
+              }
+              i += 1;
+            }
+          }
+          else {
+            eprintln!("\x1b[1;31mError: Password Verification Failed\x1b[0m");
+          }
         }
       }
     }
@@ -250,7 +297,7 @@ fn main() {
     eprintln!("Vaulty v{}", env!("CARGO_PKG_VERSION"));
     eprintln!("Usage: vaulty encrypt [file] [..]");
     eprintln!("              decrypt [file] [..]");
-    eprintln!("              chpass");
+    eprintln!("              chpass [file] [..]");
     eprintln!("              sha256 [-r] [file|dir] [..]");
   }
 }
