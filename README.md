@@ -6,7 +6,7 @@ Vaulty is an extremely lightweight encryption/decryption tool which uses ChaCha2
 ```
 vaulty encrypt [file] [..]
        decrypt [file] [..]
-       chpass
+       chpass [file] [..]
        sha256 [-r] [file|dir] [..]
 ```
 
